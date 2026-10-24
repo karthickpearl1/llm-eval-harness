@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval report: {{ run.name }}</title>
+<style>
+  :root { --ink:#1f2933; --muted:#616e7c; --line:#e4e7eb; --bg:#f7f8fa; --ok:#16794c; --bad:#b42318; --okbg:#e7f6ee; --badbg:#fdecea; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width:1200px; margin:0 auto; padding:28px 24px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:28px 0 10px; }
+  .meta { color:var(--muted); }
+  .meta code { background:#eef0f3; padding:1px 5px; border-radius:4px; }
+  .banner { margin:18px 0; padding:12px 16px; border-radius:8px; font-weight:600; }
+  .banner.ok { background:var(--okbg); color:var(--ok); }
+  .banner.bad { background:var(--badbg); color:var(--bad); }
+  .banner ul { margin:6px 0 0; padding-left:20px; font-weight:400; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; margin-top:18px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .card .value { font-size:22px; font-weight:600; margin-top:2px; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { background:#f1f3f5; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  table.summary { width:auto; min-width:560px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .better { color:var(--ok); } .worse { color:var(--bad); }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; }
+  .badge.pass { background:var(--okbg); color:var(--ok); } .badge.fail { background:var(--badbg); color:var(--bad); }
+  .answer { color:var(--muted); font-size:13px; max-width:420px; }
+  .fail-reasons { color:var(--bad); font-size:12px; }
+  .tag { display:inline-block; background:#eef0f3; border-radius:4px; padding:0 5px; margin-right:3px; font-size:11px; color:var(--muted); }
+  footer { margin-top:24px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Eval report: {{ run.name }}</h1>
+  <div class="meta">
+    Provider <code>{{ run.provider }}</code> · model <code>{{ run.model }}</code> · judge <code>{{ run.judge }}</code>
+    · top_k {{ run.top_k }} · PII redaction {{ "on" if run.redact_pii else "off" }}
+    · {{ run.cases }} cases from <code>{{ run.dataset }}</code> · {{ run.started_at }}
+    {% if baseline_run %}<br>Compared with baseline <code>{{ baseline_run.name }}</code> ({{ baseline_run.model }}){% endif %}
+  </div>
+
+  {% if gate %}
+  <div class="banner {{ 'ok' if gate.passed else 'bad' }}">
+    Quality gate {{ "PASSED" if gate.passed else "FAILED" }}
+    {% set failed = gate.checks | rejectattr("passed") | list %}
+    {% if failed or gate.new_failures %}
+    <ul>
+      {% for c in failed %}<li>{{ c.message }}</li>{% endfor %}
+      {% if gate.new_failures %}<li>Newly failing cases: {{ gate.new_failures | join(", ") }}</li>{% endif %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="cards">
+    {% for r in rows if r.metric in ["pass_rate", "fact_recall", "faithfulness", "context_recall", "judge_correctness", "refusal_accuracy", "pii_leak_rate", "latency_p95_ms", "total_cost_usd"] %}
+    <div class="card">
+      <div class="label">{{ r.metric | replace("_", " ") }}</div>
+      <div class="value">{{ r.value }}</div>
+      {% if r.delta is defined and r.delta != "0" %}<div class="{{ r.trend }}">{{ r.delta }} vs baseline</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>Summary metrics</h2>
+  <table class="summary">
+    <thead><tr><th>Metric</th>{% if baseline_run %}<th class="num">Baseline</th>{% endif %}<th class="num">Value</th>{% if baseline_run %}<th class="num">Change</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.metric }}</td>
+        {% if baseline_run %}<td class="num">{{ r.baseline }}</td>{% endif %}
+        <td class="num">{{ r.value }}</td>
+        {% if baseline_run %}<td class="num {{ r.trend }}">{{ r.delta }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Cases</h2>
+  <table>
+    <thead>
+      <tr><th>Case</th><th>Status</th><th>Question / answer</th>
+      <th class="num">Facts</th><th class="num">Faithful</th><th class="num">Ctx recall</th><th class="num">Judge</th><th class="num">Latency</th></tr>
+    </thead>
+    <tbody>
+    {% for c in cases %}
+      <tr>
+        <td><strong>{{ c.id }}</strong><br>{% for t in c.tags %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+        <td><span class="badge {{ 'pass' if c.passed else 'fail' }}">{{ "PASS" if c.passed else "FAIL" }}</span></td>
+        <td>
+          {{ c.question }}
+          <div class="answer">{{ c.answer }}</div>
+          {% if c.failures %}<div class="fail-reasons">{{ c.failures | join("; ") }}</div>{% endif %}
+        </td>
+        <td class="num">{{ fmt(c.metrics.fact_recall, "ratio") }}</td>
+        <td class="num">{{ fmt(c.metrics.faithfulness, "ratio") }}</td>
+        <td class="num">{{ fmt(c.metrics.context_recall, "ratio") }}</td>
+        <td class="num">{{ fmt(c.metrics.judge_correctness, "ratio") }}</td>
+        <td class="num">{{ fmt(c.latency_ms, "ms") }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <footer>llm-eval-harness {{ run.harness_version }}</footer>
+</main>
+</body>
+</html>

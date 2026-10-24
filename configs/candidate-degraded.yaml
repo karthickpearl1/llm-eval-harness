@@ -1,0 +1,17 @@
+# A deliberately worse candidate, used to prove the regression gate catches real problems.
+# It simulates the kind of change that slips through manual review: a smaller retrieval
+# window, a chattier model that sometimes invents details, a slower endpoint and a
+# guardrail switched off.
+extends: ../eval.yaml
+name: candidate-degraded
+
+app:
+  top_k: 1
+  redact_pii: false
+
+provider:
+  model: mock-extractive-degraded
+  options:
+    max_sentences: 2
+    hallucination_rate: 0.3
+    extra_latency_ms: 150

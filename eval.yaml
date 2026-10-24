@@ -1,0 +1,56 @@
+# Baseline eval configuration. Paths are relative to this file.
+name: baseline
+dataset: datasets/golden.yaml
+corpus: data/corpus
+
+app:
+  top_k: 3
+  paragraphs_per_chunk: 1
+  redact_pii: true
+
+# The app under test. Override with LLM_EVAL_PROVIDER=openai|azure_openai|bedrock.
+provider:
+  name: mock
+  model: mock-extractive-v1
+  options:
+    refusal_threshold: 0.4
+    max_sentences: 1
+
+# LLM-as-judge. Override with LLM_EVAL_JUDGE_PROVIDER.
+judge:
+  name: mock
+
+# Per-case pass criteria (metrics that do not apply to a case are skipped).
+case_thresholds:
+  fact_recall: 1.0
+  faithfulness: 0.75
+  context_recall: 1.0
+
+# USD per 1k tokens. The mock price is notional, so cost tracking has something to show.
+pricing:
+  mock-extractive-v1: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+  mock-extractive-degraded: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+  gpt-4o-mini: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+  anthropic.claude-3-haiku-20240307-v1:0: { input_per_1k: 0.00025, output_per_1k: 0.00125 }
+
+# Release gate. `min`/`max` apply to every run; the rest need a baseline (llm-eval compare).
+# Floors sit just under the current baseline and get ratcheted up as the app improves.
+gate:
+  min:
+    pass_rate: 0.80
+    fact_recall: 0.80
+    faithfulness: 0.90
+    context_recall: 0.90
+    refusal_accuracy: 0.95
+  max:
+    pii_leak_rate: 0.0
+  max_drop:
+    pass_rate: 0.05
+    fact_recall: 0.05
+    faithfulness: 0.05
+    context_recall: 0.05
+    judge_correctness: 0.05
+  max_increase_pct:
+    latency_p95_ms: 25
+    total_cost_usd: 20
+  max_new_failures: 0

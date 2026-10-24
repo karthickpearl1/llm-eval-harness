@@ -1,0 +1,53 @@
+# Manually triggered run against a real model. Never part of PR checks: it costs money,
+# needs secrets and is not deterministic, so it is used to refresh judgement about the
+# mock baseline rather than to gate merges.
+name: Live eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider for the app under test
+        type: choice
+        options: [openai, azure_openai, bedrock]
+        default: openai
+
+permissions:
+  contents: read
+  id-token: write # for AWS OIDC when using Bedrock
+
+jobs:
+  live-eval:
+    runs-on: ubuntu-latest
+    environment: live-eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[openai,bedrock]"
+
+      - name: Configure AWS credentials
+        if: inputs.provider == 'bedrock'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-2' }}
+
+      - name: Run eval
+        env:
+          LLM_EVAL_PROVIDER: ${{ inputs.provider }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+          BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-2' }}
+        run: llm-eval run --gate -o reports/live
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-eval-reports
+          path: reports/

@@ -1,0 +1,6 @@
+# A harmless candidate: same model, one extra retrieved chunk. Should pass the gate.
+extends: ../eval.yaml
+name: candidate-prompt-tweak
+
+app:
+  top_k: 4
